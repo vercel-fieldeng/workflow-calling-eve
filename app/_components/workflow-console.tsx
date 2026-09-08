@@ -25,7 +25,7 @@ async function fetchStatus(url: string): Promise<ReviewStatus> {
 
 export function WorkflowConsole({ initialRunId }: { initialRunId?: string }) {
   const router = useRouter()
-  const [proposal, setProposal] = useState(sample)
+  const [draft, setProposal] = useState<string>()
   const [runId, setRunId] = useState(initialRunId)
   const [submitting, setSubmitting] = useState(false)
   const submitLock = useRef(false)
@@ -36,6 +36,7 @@ export function WorkflowConsole({ initialRunId }: { initialRunId?: string }) {
     shouldRetryOnError: false,
     revalidateOnFocus: true,
   })
+  const proposal = draft ?? run?.proposal ?? sample
   const busy = submitting || Boolean(runId && (!run || !terminal.includes(run.overall)) && !error)
   const currentStatus = submitting ? 'Starting workflow' : error ? 'Connection error' : run ? run.overall.replaceAll('_', ' ') : 'Ready to run'
 

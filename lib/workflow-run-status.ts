@@ -147,8 +147,9 @@ interface HydratedStep {
   completedAt: number | null;
 }
 
-function stepAgent(input: unknown): AgentName | null {
-  const candidate = Array.isArray(input) ? input[0] : undefined;
+export function stepAgent(input: unknown): AgentName | null {
+  const args = input && typeof input === 'object' && 'args' in input ? input.args : input;
+  const candidate = Array.isArray(args) ? args[0] : undefined;
   return (AGENT_NAMES as readonly string[]).includes(candidate as string)
     ? (candidate as AgentName)
     : null;
