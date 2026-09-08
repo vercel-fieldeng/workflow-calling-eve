@@ -5,15 +5,9 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter, CardAction } from '@/components/ui/card'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 
-export type AgentView = {
-  status: string
-  sessionId?: string | null
-  output?: unknown
-  error?: string | null
-  durationMs?: number | null
-}
+import type { BranchResult } from '@/lib/review-types'
 
-const labels: Record<string, string> = { idle: 'Ready', queued: 'Queued', running: 'Running', completed: 'Completed', failed: 'Failed', waiting: 'Waiting', pending: 'Queued' }
+const labels: Record<string, string> = { idle: 'Ready', queued: 'Queued', running: 'Running', completed: 'Completed', failed: 'Failed', waiting: 'Waiting', pending: 'Queued', admitted: 'Running', timeout: 'Timed out' }
 
 function Output({ value }: { value: unknown }) {
   if (value === null || value === undefined) return null
@@ -23,9 +17,9 @@ function Output({ value }: { value: unknown }) {
   return <span>{String(value)}</span>
 }
 
-export function AgentResult({ kind, agent }: { kind: 'benefits' | 'risks'; agent?: AgentView }) {
+export function AgentResult({ kind, agent }: { kind: 'benefits' | 'risks'; agent?: BranchResult }) {
   const status = agent?.status ?? 'idle'
-  const busy = ['running', 'waiting'].includes(status)
+  const busy = ['running', 'admitted', 'waiting'].includes(status)
   const Icon = kind === 'benefits' ? ArrowUpRight : ShieldCheck
   const StatusIcon = status === 'completed' ? Check : status === 'failed' ? TriangleAlert : busy ? Loader2 : Circle
   return (
@@ -37,11 +31,11 @@ export function AgentResult({ kind, agent }: { kind: 'benefits' | 'risks'; agent
         <CardAction><Badge variant={status === 'completed' ? 'default' : 'outline'}><StatusIcon data-icon="inline-start" className={busy ? 'animate-spin' : ''} />{labels[status] ?? status}</Badge></CardAction>
       </CardHeader>
       <CardContent className="flex-1">
-        {agent?.error ? <div role="alert" className="flex flex-col gap-2 py-4"><p className="font-medium">This branch could not finish.</p><p className="text-sm leading-relaxed text-muted-foreground">{agent.error}</p></div> : agent?.output ? <div className="pb-3"><Output value={agent.output} /></div> : <Empty className="min-h-40 px-0 py-5"><EmptyHeader><EmptyMedia><Icon className="size-6 text-muted-foreground/50" /></EmptyMedia><EmptyTitle>{busy ? 'Analyzing your proposal' : status === 'queued' ? 'Waiting to start' : 'A second perspective, on demand'}</EmptyTitle><EmptyDescription>{busy ? 'This agent is working in its own eve session.' : 'Run the workflow to see the analysis here.'}</EmptyDescription></EmptyHeader></Empty>}
+        {agent?.error ? <div role="alert" className="flex flex-col gap-2 py-4"><p className="font-medium">This branch could not finish.</p><p className="text-sm leading-relaxed text-muted-foreground">{agent.error}</p></div> : (agent?.analysis || agent?.message) ? <div className="pb-3"><Output value={agent.analysis || agent.message} /></div> : <Empty className="min-h-40 px-0 py-5"><EmptyHeader><EmptyMedia><Icon className="size-6 text-muted-foreground/50" /></EmptyMedia><EmptyTitle>{busy ? 'Analyzing your proposal' : status === 'queued' ? 'Waiting to start' : 'A second perspective, on demand'}</EmptyTitle><EmptyDescription>{busy ? 'This agent is working in its own eve session.' : 'Run the workflow to see the analysis here.'}</EmptyDescription></EmptyHeader></Empty>}
       </CardContent>
       <CardFooter className="justify-between gap-3">
         <span className="min-w-0 truncate font-mono text-sm text-muted-foreground" title={agent?.sessionId ?? undefined}>{agent?.sessionId ?? `eve / ${kind}`}</span>
-        <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground"><Clock3 className="size-3.5" />{agent?.durationMs != null ? `${(agent.durationMs / 1000).toFixed(1)}s` : 'Not started'}</span>
+        <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground"><Clock3 className="size-3.5" />{agent?.durationMs != null ? `${(agent.durationMs / 1000).toFixed(1)}s` : busy ? 'In progress' : agent?.error ? 'Stopped' : 'Not started'}</span>
       </CardFooter>
     </Card>
   )
