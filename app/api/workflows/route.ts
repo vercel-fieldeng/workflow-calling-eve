@@ -1,59 +1,47 @@
-import { NextResponse } from "next/server";
-import { z } from "zod";
-import { start } from "workflow/api";
+import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import { start } from 'workflow/api'
+import { parallelReviewWorkflow } from '@/workflows/parallel-review'
+import { PROPOSAL_MAX, PROPOSAL_MIN } from '@/lib/review-types'
 
-import { parallelReviewWorkflow } from "@/workflows/parallel-review";
-import { PROPOSAL_MAX, PROPOSAL_MIN } from "@/lib/review-types";
-
-export const runtime = "nodejs";
-
-const MAX_BODY_BYTES = 16 * 1024;
-
-const bodySchema = z.object({
-  proposal: z.string().min(PROPOSAL_MIN).max(PROPOSAL_MAX),
-});
+export const runtime = 'nodejs'
+const MAX_BODY_BYTES = 16 * 1024
+const bodySchema = z.object({ proposal: z.string().trim().min(PROPOSAL_MIN).max(PROPOSAL_MAX) }).strict()
 
 export async function POST(request: Request) {
-  const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
-    return NextResponse.json({ error: "payload too large" }, { status: 413 });
+  if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+    return NextResponse.json({ error: 'Send an application/json request body.' }, { status: 415 })
   }
-
-  let raw: unknown;
+  const reader = request.body?.getReader()
+  if (!reader) return NextResponse.json({ error: 'A proposal is required.' }, { status: 400 })
+  let raw: unknown
   try {
-    raw = await request.json();
+    const decoder = new TextDecoder()
+    let bytes = 0
+    let text = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      bytes += value.byteLength
+      if (bytes > MAX_BODY_BYTES) {
+        await reader.cancel()
+        return NextResponse.json({ error: 'Request body exceeds 16 KB.' }, { status: 413 })
+      }
+      text += decoder.decode(value, { stream: true })
+    }
+    raw = JSON.parse(text + decoder.decode())
   } catch {
-    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: 'The request body must contain valid JSON.' }, { status: 400 })
+  } finally {
+    reader.releaseLock()
   }
+  const parsed = bodySchema.safeParse(raw)
+  if (!parsed.success) return NextResponse.json({ error: `Provide only a proposal between ${PROPOSAL_MIN} and ${PROPOSAL_MAX} characters.` }, { status: 400 })
 
-  const parsed = bodySchema.safeParse(raw);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "invalid body", details: parsed.error.issues },
-      { status: 400 },
-    );
-  }
-
-  const proposal = parsed.data.proposal.trim();
-  if (proposal.length < PROPOSAL_MIN) {
-    return NextResponse.json(
-      { error: `proposal must be at least ${PROPOSAL_MIN} non-whitespace chars` },
-      { status: 400 },
-    );
-  }
-
-  let runId: string;
   try {
-    const run = await start(parallelReviewWorkflow, [proposal]);
-    runId = run.runId;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { error: "failed to start workflow", detail: message },
-      { status: 500 },
-    );
+    const run = await start(parallelReviewWorkflow, [parsed.data.proposal])
+    return NextResponse.json({ runId: run.runId, statusUrl: `/api/workflows/${run.runId}` }, { status: 202 })
+  } catch {
+    return NextResponse.json({ error: 'The workflow runtime could not accept this run. Try again later.' }, { status: 503 })
   }
-
-  const statusUrl = new URL(`/api/workflows/${runId}`, request.url).toString();
-  return NextResponse.json({ runId, statusUrl }, { status: 202 });
 }
